@@ -1,0 +1,143 @@
+{
+  "string": [
+    {
+      "path": "models/string_20260615T110056.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260615T110056"
+      }
+    }
+  ],
+  "trained_arima": [
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/trained_arima_20260616T025700.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T025700",
+        "type": "arima"
+      }
+    },
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/trained_arima_20260616T073715.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T073715",
+        "type": "arima"
+      }
+    }
+  ],
+  "compare_arima": [
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/compare_arima_20260616T030355.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T030355",
+        "type": "arima"
+      }
+    },
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/compare_arima_20260616T030756.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T030756",
+        "type": "arima"
+      }
+    },
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/compare_arima_20260616T031234.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T031234",
+        "type": "arima"
+      }
+    },
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/compare_arima_20260616T073802.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T073802",
+        "type": "arima"
+      }
+    }
+  ],
+  "selected_arima": [
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/selected_arima_20260616T073821.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T073821",
+        "type": "arima"
+      }
+    }
+  ],
+  "auto_arima": [
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/auto_arima_20260616T075538.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T075538",
+        "type": "arima"
+      }
+    },
+    {
+      "path": "D:\\AIDF\\AI-Demand-forecasting-main\\models/auto_arima_20260616T081909.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T081909",
+        "type": "arima"
+      }
+    },
+    {
+      "path": "D:\\AIDF\\chandramouli\\models/auto_arima_20260616T123111.pkl",
+      "metadata": {
+        "order": [
+          1,
+          1,
+          1
+        ],
+        "trained_at": "20260616T123111",
+        "type": "arima"
+      }
+    }
+  ]
+}

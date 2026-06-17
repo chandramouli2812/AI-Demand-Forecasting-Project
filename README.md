@@ -1,16 +1,976 @@
-# Backend Template
+# AI Demand Forecasting — Backend Architecture
 
-This directory contains a backend application scaffold for a demand forecasting platform.
+> Complete reference for every module, file, workflow, and data flow in the FastAPI backend.
 
-## Structure
-- `app/` — main application package
-- `app/config/` — configuration and environment loading
-- `app/core/` — security, middleware, exceptions
-- `app/api/` — API routers and endpoints
-- `app/modules/` — domain logic and AI modules
-- `app/models/` — database models
-- `app/schemas/` — request/response validation models
-- `app/services/` — shared services
-- `app/tasks/` — background jobs
-- `app/utils/` — helpers and utilities
-- `app/tests/` — basic unit tests
+---
+
+## Table of Contents
+
+1. [Project Structure](#project-structure)
+2. [Module 1 — Authentication & Security](#module-1--authentication--security)
+3. [Module 2 — Data Integration](#module-2--data-integration)
+4. [Module 3 — Data Processing](#module-3--data-processing)
+5. [Module 4 — Forecasting Engine](#module-4--forecasting-engine)
+6. [Module 5 — Recommendations](#module-5--recommendations)
+7. [Core Infrastructure](#core-infrastructure)
+8. [Database & Migrations](#database--migrations)
+9. [Configuration Reference](#configuration-reference)
+10. [Quick Start](#quick-start)
+
+---
+
+## Project Structure
+
+```
+Ai Demand Forecasting Project/
+│
+├── .env                                    # Environment variables
+├── requirements.txt                        # Python dependencies
+├── test.db                                 # SQLite database (dev)
+├── alembic.ini                             # DB migration config
+│
+├── alembic/                                # Database migrations
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/
+│       ├── c7616dbbb55b_initial_commit.py
+│       └── d9a7b41e2c31_add_workflow_tables.py
+│
+├── data/                                   # Raw & processed datasets
+│   ├── demand forecasting dataset.csv
+│   └── processed_demand forecasting dataset.csv
+│
+├── uploads/                                # User-uploaded CSV files
+│   └── demand forecasting dataset.csv
+│
+├── models/                                 # Trained ML model files
+│   └── registry.json                       # Model index (name → path)
+│
+└── fastapi_app/                            # Main application package
+    ├── main.py                             # App entry, router registration
+    │
+    ├── ai/                                 # ML model implementations
+    │   ├── arima.py
+    │   ├── lstm.py
+    │   ├── prophet.py
+    │   └── xgboost_model.py
+    │
+    ├── core/                               # Infrastructure layer
+    │   ├── config.py                       # Env vars & settings
+    │   ├── security.py                     # JWT + password hashing
+    │   ├── dependencies.py                 # get_current_user()
+    │   └── permissions.py                  # Role-based access
+    │
+    ├── db/
+    │   └── session.py                      # SQLAlchemy engine + get_db()
+    │
+    ├── models/                             # Database table definitions
+    │   ├── auth_model.py                   # User table
+    │   ├── otp_model.py                    # OTP records
+    │   ├── data_source_model.py            # Data source table
+    │   ├── upload_model.py                 # Uploaded files table
+    │   └── validation_error_model.py       # Validation error table
+    │
+    ├── schemas/                            # Pydantic request/response models
+    │   ├── auth_schema.py
+    │   ├── password_reset_schema.py
+    │   ├── data_source_schema.py
+    │   ├── upload_schema.py
+    │   └── validation_error_schema.py
+    │
+    ├── services/                           # Business logic (grouped by domain)
+    │   ├── auth/
+    │   │   ├── auth_service.py
+    │   │   └── password_reset_service.py
+    │   ├── data_integration/
+    │   │   ├── data_integration_service.py
+    │   │   ├── data_source_service.py
+    │   │   └── upload_service.py
+    │   ├── data_processing/
+    │   │   ├── data_processing_service.py  # Low-level CSV/series utils
+    │   │   └── processing_service.py       # Pipeline management
+    │   ├── forecast/
+    │   │   ├── forecast_service.py         # Model training & registry
+    │   │   └── forecast_engine_service.py  # End-to-end report wrapper
+    │   ├── recommendation/
+    │   │   └── recommendation_service.py
+    │   └── validation/
+    │       └── validation_service.py
+    │
+    ├── routes/                             # API endpoint definitions
+    │   ├── auth_router.py
+    │   ├── data_integration.py
+    │   ├── data_sources.py
+    │   ├── uploads.py
+    │   ├── validation.py
+    │   ├── data_processing.py
+    │   ├── processing.py
+    │   ├── forecast.py
+    │   ├── forecast_engine.py
+    │   └── recommendation.py
+    │
+    └── scripts/
+        └── create_superadmin.py            # One-time admin setup script
+```
+
+---
+
+## Module 1 — Authentication & Security
+
+> Handles user accounts, login/logout, JWT tokens, OTP-based password reset, and role-based permissions.
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `models/auth_model.py` | User table definition |
+| `models/otp_model.py` | OTP record storage |
+| `schemas/auth_schema.py` | Login/register request & response shapes |
+| `schemas/password_reset_schema.py` | Forgot/reset password shapes |
+| `services/auth/auth_service.py` | Core auth logic |
+| `services/auth/password_reset_service.py` | OTP generation & verification |
+| `core/security.py` | Password hashing + JWT |
+| `core/dependencies.py` | `get_current_user()` — protects routes |
+| `core/permissions.py` | Role checks (`super_admin`, `user`) |
+| `routes/auth_router.py` | All `/api/v1/auth/` endpoints |
+| `scripts/create_superadmin.py` | One-time CLI script for first admin |
+
+---
+
+### Database Models
+
+**`auth_model.py` — User Table**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | Integer | Primary key |
+| `name` | String | Full name |
+| `email` | String | Unique — used for login |
+| `password` | String | SHA-256 hashed |
+| `role` | Enum | `user` or `super_admin` |
+| `is_active` | Boolean | Soft-disable accounts |
+| `phone_number` | String | E.164 format — used for OTP delivery |
+| `created_at` | DateTime | Auto-set on creation |
+
+**`otp_model.py` — OTP Table**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | Integer | Primary key |
+| `email` | String | Associated user email |
+| `otp_code` | String | 6-digit code |
+| `expires_at` | DateTime | Valid for 10 minutes |
+| `is_used` | Boolean | Prevents reuse |
+
+---
+
+### Service Functions
+
+**`auth_service.py`**
+
+| Function | What it does |
+|----------|-------------|
+| `get_user_by_email(email)` | Fetch active user by email |
+| `get_user_by_id(id)` | Fetch active user by ID |
+| `create_super_admin(data)` | One-time super admin creation |
+| `login_user(email, password)` | Validate credentials, return tokens |
+| `create_user(data)` | Register new user |
+| `create_refresh_token_for_user(user)` | Generate 7-day refresh JWT |
+
+**`password_reset_service.py`**
+
+| Function | What it does |
+|----------|-------------|
+| `send_otp(email)` | Generate OTP, store in `otp_model`, send to phone |
+| `verify_otp(email, code)` | Check code validity + expiry |
+| `reset_password(email, otp, new_password)` | Validate OTP, update hashed password |
+
+**`security.py`**
+
+| Function | What it does |
+|----------|-------------|
+| `hash_password(plain)` | SHA-256 hash |
+| `verify_password(plain, hashed)` | Compare plain vs stored hash |
+| `create_access_token(data)` | JWT — 60 min expiry |
+| `verify_token(token)` | Decode & validate JWT, return payload |
+
+---
+
+### API Endpoints — `auth_router.py`
+
+```
+POST  /api/v1/auth/super-admin/setup     → Create initial super admin (one-time)
+POST  /api/v1/auth/login                 → Email + password → access + refresh token
+POST  /api/v1/auth/logout                → Stateless logout (client clears token)
+POST  /api/v1/auth/refresh-token         → Refresh token → new access token
+
+POST  /api/v1/auth/forgot-password       → Send OTP to phone number
+POST  /api/v1/auth/verify-otp            → Verify OTP → return reset_token
+POST  /api/v1/auth/reset-password        → Set new password with reset_token
+```
+
+---
+
+### Request / Response Examples
+
+**Login**
+```json
+// Request
+{ "email": "user@example.com", "password": "Password123" }
+
+// Response
+{
+  "access_token": "eyJhbGc...",
+  "token_type": "bearer",
+  "refresh_token": "eyJhbGc...",
+  "user": {
+    "id": 1,
+    "name": "John Doe",
+    "email": "user@example.com",
+    "role": "user",
+    "is_active": true,
+    "created_at": "2026-06-17T00:00:00"
+  }
+}
+```
+
+**Reset Password**
+```json
+// Request
+{ "email": "user@example.com", "new_password": "NewPassword123" }
+```
+
+---
+
+### Authentication Flow
+
+```
+┌─────────────────────────────────────────────────────┐
+│  1. SETUP (one-time)                                 │
+│     POST /super-admin/setup                          │
+│     or: python scripts/create_superadmin.py          │
+└────────────────────┬────────────────────────────────┘
+                     ↓
+┌─────────────────────────────────────────────────────┐
+│  2. LOGIN                                            │
+│     POST /login  {email, password}                   │
+│     ← access_token (60 min) + refresh_token (7 days)│
+└────────────────────┬────────────────────────────────┘
+                     ↓
+┌─────────────────────────────────────────────────────┐
+│  3. USE API                                          │
+│     Authorization: Bearer <access_token>             │
+│     → get_current_user() validates on every request  │
+└────────────────────┬────────────────────────────────┘
+                     ↓
+        ┌────────────┴─────────────┐
+        │                          │
+   Token expired?           Forgot password?
+        ↓                          ↓
+POST /refresh-token      POST /forgot-password
+← new access_token       ← OTP sent to phone
+                                   ↓
+                         POST /verify-otp
+                         ← reset_token
+                                   ↓
+                         POST /reset-password
+                         ← password updated
+```
+
+### Password Rules
+- Minimum **8 characters**
+- At least one **uppercase letter**
+- At least one **digit**
+
+### Protecting Routes
+
+```python
+from fastapi import Depends
+from fastapi_app.core.dependencies import get_current_user
+
+@router.get("/protected")
+def my_route(current_user = Depends(get_current_user)):
+    ...
+```
+
+**Token validation checks (in order):**
+1. `Authorization: Bearer` header present
+2. JWT not expired
+3. JWT signature valid
+4. User ID exists in database
+5. `user.is_active == True`
+
+---
+
+## Module 2 — Data Integration
+
+> Register external data sources and manage uploaded CSV files.
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `models/data_source_model.py` | DataSource table |
+| `models/upload_model.py` | Upload table |
+| `models/validation_error_model.py` | Validation errors table |
+| `schemas/data_source_schema.py` | Source create/update/response |
+| `schemas/upload_schema.py` | Upload response shape |
+| `schemas/validation_error_schema.py` | Error response + fix request |
+| `services/data_integration/data_source_service.py` | Source CRUD logic |
+| `services/data_integration/upload_service.py` | File save + CSV validation |
+| `services/data_integration/data_integration_service.py` | Orchestration layer |
+| `services/validation/validation_service.py` | Error lifecycle management |
+| `routes/data_sources.py` | `/api/v1/data-sources/` endpoints |
+| `routes/uploads.py` | `/api/v1/uploads/` endpoints |
+| `routes/validation.py` | `/api/v1/validation/` endpoints |
+| `routes/data_integration.py` | Combined integration route |
+
+---
+
+### 2A — Data Sources
+
+**Database Model — `data_source_model.py`**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `name` | String | Display name (e.g. "Production DB") |
+| `type` | String | `database`, `api`, or `csv` |
+| `connection_string` | Text | Credentials or URL |
+| `status` | Enum | `inactive` → `syncing` → `active` / `scheduled` |
+| `health` | Enum | `unknown`, `healthy`, `unhealthy` |
+| `last_sync` | DateTime | Timestamp of last successful sync |
+
+**Service Functions — `data_source_service.py`**
+
+| Function | What it does |
+|----------|-------------|
+| `get_all_data_sources()` | List all registered sources |
+| `create_data_source(data)` | Register a new source |
+| `update_data_source(id, data)` | Modify source config |
+| `delete_data_source(id)` | Remove a source |
+| `sync_data_source(id)` | Trigger pull → status: `syncing` |
+| `schedule_sync_data_source(id)` | Queue for later → status: `scheduled` |
+| `get_data_source_health(id)` | Check connection status |
+| `get_data_source_logs(id)` | Retrieve sync history |
+
+**API Endpoints**
+
+```
+POST   /api/v1/data-sources                       → Register new source
+GET    /api/v1/data-sources                       → List all sources
+GET    /api/v1/data-sources/{id}                  → Get source details
+PUT    /api/v1/data-sources/{id}                  → Update config
+DELETE /api/v1/data-sources/{id}                  → Remove source
+POST   /api/v1/data-sources/{id}/sync             → Trigger sync now
+POST   /api/v1/data-sources/{id}/schedule-sync    → Schedule for later
+GET    /api/v1/data-sources/{id}/health           → Health check
+GET    /api/v1/data-sources/{id}/logs             → Sync history
+```
+
+---
+
+### 2B — File Uploads
+
+**Database Model — `upload_model.py`**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `filename` | String | Original filename |
+| `file_path` | String | Path on disk (`uploads/file.csv`) |
+| `status` | Enum | `pending` → `uploaded` → `processed` / `failed_validation` / `failed` |
+| `uploaded_by` | String | Email of uploader |
+| `uploaded_at` | DateTime | Upload timestamp |
+
+**Service Functions — `upload_service.py`**
+
+| Function | What it does |
+|----------|-------------|
+| `create_upload(file, user)` | Save file to disk + record in DB |
+| `get_uploads()` | List all uploads |
+| `get_upload(id)` | Get specific upload |
+| `delete_upload(id)` | Remove file from disk + DB |
+| `process_upload(id)` | Validate CSV structure + update status |
+
+**CSV Validation (inside `process_upload`)**
+
+```
+✓ File exists on disk
+✓ pandas can read the file
+✓ Required columns present: Date, Demand
+✓ Demand column is numeric
+────────────────────────────────────
+Any failure → create_validation_error() called
+             status = failed_validation
+All pass    → status = processed ✓
+```
+
+**Required CSV Format**
+
+```csv
+Date,Demand
+2024-01-01,142.5
+2024-01-02,138.0
+2024-01-03,155.2
+```
+
+**API Endpoints**
+
+```
+POST   /api/v1/uploads/file          → Upload CSV (multipart/form-data)
+GET    /api/v1/uploads               → List all uploads
+GET    /api/v1/uploads/{id}          → Get upload details
+DELETE /api/v1/uploads/{id}          → Delete upload + file
+POST   /api/v1/uploads/{id}/process  → Validate and process
+```
+
+---
+
+### 2C — Validation Errors
+
+**Database Model — `validation_error_model.py`**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `source` | String | Origin (e.g. `upload:5`, `data_source:2`) |
+| `error_type` | String | `missing_column`, `invalid_numeric_value`, `read_error` |
+| `severity` | Enum | `low`, `medium`, `high` |
+| `rows_affected` | Integer | Count of bad rows |
+| `status` | Enum | `open` → `fixed` / `ignored` |
+
+**Severity Guide**
+
+| Level | Meaning | Example |
+|-------|---------|---------|
+| `high` | Blocks all processing | Missing required column, unreadable file |
+| `medium` | Partial data quality issue | Invalid numeric values in Demand column |
+| `low` | Minor inconsistency | Extra whitespace, formatting issue |
+
+**API Endpoints**
+
+```
+GET    /api/v1/validation/errors               → List all errors
+GET    /api/v1/validation/errors/{id}          → Get specific error
+POST   /api/v1/validation/errors/{id}/fix      → Mark as fixed
+POST   /api/v1/validation/errors/{id}/ignore   → Mark as ignored
+POST   /api/v1/validation/fix-all              → Bulk fix all open errors
+```
+
+---
+
+### Data Integration Flow
+
+```
+Register data source (POST /data-sources)
+            ↓
+    status: inactive
+            ↓
+    POST /{id}/sync          OR     POST /{id}/schedule-sync
+            ↓                               ↓
+    status: syncing                 status: scheduled
+    last_sync updated
+            ↓
+    status: active / unhealthy
+            ─────────────────────────────────────────
+Upload CSV (POST /uploads/file)
+            ↓
+    File saved to uploads/
+    status: uploaded
+            ↓
+    POST /uploads/{id}/process
+            ↓
+    pandas validates CSV
+            ↓
+    Columns OK? ──Yes──► status: processed ✓
+                │
+                No
+                ↓
+    ValidationError created (status: open)
+    status: failed_validation ✗
+            ↓
+    User reviews GET /validation/errors
+            ↓
+    POST /fix  or  POST /ignore  or  POST /fix-all
+```
+
+---
+
+## Module 3 — Data Processing
+
+> Clean, transform, and prepare time series data for model training.
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `services/data_processing/data_processing_service.py` | Low-level CSV/series utilities |
+| `services/data_processing/processing_service.py` | Pipeline management (status, logs) |
+| `routes/data_processing.py` | `/api/data_process/` — direct processing |
+| `routes/processing.py` | `/api/v1/processing/` — pipeline status |
+
+---
+
+### Low-Level Utilities — `data_processing_service.py`
+
+| Function | Parameters | What it does |
+|----------|-----------|-------------|
+| `load_csv(path)` | file path | Read CSV with datetime parsing |
+| `select_value_column(df)` | dataframe | Auto-detect numeric column to forecast |
+| `handle_missing(series, method)` | `interpolate` / `drop` / `ffill` | Fix NaN values |
+| `remove_outliers(series, z_thresh)` | default `3.0` | Z-score outlier removal |
+| `simple_resample(series, rule)` | `D` / `M` / `Y` | Aggregate by time period |
+| `normalize(series)` | — | Standardize: mean=0, std=1 |
+| `series_from_list(values)` | list of floats | Convert to pandas Series |
+
+### Pipeline Management — `processing_service.py`
+
+| Function | What it does |
+|----------|-------------|
+| `start_processing()` | Start pipeline job |
+| `stop_processing()` | Stop running pipeline |
+| `get_processing_pipeline()` | Steps: load → clean → feature_engineer |
+| `get_outliers()` | Detected outlier records |
+| `get_features()` | Engineered feature list |
+| `get_processing_logs()` | Processing history |
+
+---
+
+### API Endpoints
+
+**Direct Processing:**
+```
+POST   /api/data_process/series        → Process a numeric array directly
+POST   /api/data_process/from-csv      → Full end-to-end CSV pipeline
+```
+
+**Pipeline Status:**
+```
+POST   /api/v1/processing/start        → Start pipeline
+POST   /api/v1/processing/stop         → Stop pipeline
+GET    /api/v1/processing/pipeline     → View pipeline steps
+GET    /api/v1/processing/outliers     → Outliers detected
+GET    /api/v1/processing/features     → Engineered features
+GET    /api/v1/processing/logs         → Processing history
+```
+
+---
+
+### Full Pipeline Request
+
+```json
+{
+  "path": "data/demand forecasting dataset.csv",
+  "date_column": "Date",
+  "value_column": "Demand",
+  "missing_method": "interpolate",
+  "remove_outliers": true,
+  "z_thresh": 3.0,
+  "resample_rule": "D",
+  "normalize": true,
+  "train": true,
+  "model_name": "demand_arima_v1",
+  "order": [1, 1, 1]
+}
+```
+
+### Pipeline Response
+
+```json
+{
+  "processed_path": "data/processed_demand forecasting dataset.csv",
+  "length": 730,
+  "model_path": "models/demand_arima_v1_20260617T083000.pkl"
+}
+```
+
+### Processing Flow
+
+```
+POST /api/data_process/from-csv
+            ↓
+    load_csv(path)
+            ↓
+    Detect date column → set as index
+            ↓
+    select_value_column()   ← auto-detects "Demand"
+            ↓
+    handle_missing(method="interpolate")
+            ↓
+    remove_outliers(z_thresh=3.0)
+            ↓
+    simple_resample(rule="D")
+            ↓
+    normalize()    ← if normalize=true
+            ↓
+    Save → data/processed_[filename].csv
+            ↓
+    train=true?
+    Yes → ARIMA trained & registered in registry.json
+    No  → Return processed path only
+```
+
+---
+
+## Module 4 — Forecasting Engine
+
+> Train, evaluate, compare, and deploy time series forecasting models.
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `ai/arima.py` | ARIMA model implementation |
+| `ai/xgboost_model.py` | XGBoost with lag features |
+| `ai/lstm.py` | LSTM neural network |
+| `ai/prophet.py` | Facebook Prophet (requires Python 3.9–3.11) |
+| `services/forecast/forecast_service.py` | Training, registry, forecasting |
+| `services/forecast/forecast_engine_service.py` | End-to-end report wrapper |
+| `routes/forecast.py` | `/api/forecast/` — model training & comparison |
+| `routes/forecast_engine.py` | `/api/v1/forecast-engine/` — full report |
+| `models/registry.json` | Trained model index |
+
+---
+
+### Supported Models
+
+| Model | Type | Best For | Key Params |
+|-------|------|----------|-----------|
+| **ARIMA** | Statistical | Stationary series, explainability | `order (p, d, q)` |
+| **XGBoost** | Tree Ensemble | Complex patterns, lag features | `n_lags=7` |
+| **LSTM** | Deep Learning | Non-linear patterns, long sequences | `epochs=20`, `batch_size=16` |
+| **Prophet** | Additive | Seasonality & trend changepoints | `test_frac=0.2` |
+
+> ⚠️ **Prophet Note:** Requires Python **3.9–3.11**. Fails silently on Python 3.14 due to Stan binary incompatibility. Use `py -3.11 -m venv venv` if you need Prophet.
+
+---
+
+### Service Functions — `forecast_service.py`
+
+**Model Management:**
+
+| Function | What it does |
+|----------|-------------|
+| `train_and_register(name, series, order)` | Train ARIMA, save PKL, update registry.json |
+| `get_registered_models()` | List all trained models from registry.json |
+| `get_latest_model(name)` | Fetch latest version of a named model |
+| `load_registered_model(name)` | Load PKL file from disk |
+| `prepare_series(path)` | Load CSV → resample → interpolate |
+
+**Multi-Model Training:**
+
+| Function | Returns |
+|----------|---------|
+| `train_xgboost(series, steps)` | Metrics + 7-step forecast (7 lag features) |
+| `train_lstm(series, steps)` | Metrics + forecast (20 epochs, batch 16) |
+| `train_prophet(series, steps)` | Metrics + forecast (seasonality-aware) |
+
+---
+
+### Model Registry — `models/registry.json`
+
+```json
+{
+  "demand_arima_v1": {
+    "path": "models/demand_arima_v1_20260617T083000.pkl",
+    "metadata": {
+      "order": [1, 1, 1],
+      "type": "arima",
+      "timestamp": "2026-06-17T08:30:00"
+    }
+  }
+}
+```
+
+Model files are named: `models/{name}_{YYYYMMDDTHHMMSS}.pkl`
+
+---
+
+### API Endpoints
+
+```
+GET    /api/v1/forecast-engine/report        → Full auto forecast report
+                                               ?path=...  &forecast_steps=7
+
+POST   /api/forecast/train-model             → Train one model + forecast
+POST   /api/forecast/compare-models          → Train all 4 + compare metrics
+POST   /api/forecast/predict-with-model      → Train + predict with chosen model
+```
+
+---
+
+### Request / Response
+
+**Train Model Request**
+```json
+{
+  "model_type": "arima",
+  "csv_path": "fastapi_app/data/demand forecasting dataset.csv",
+  "steps": 7,
+  "order": [1, 1, 1]
+}
+```
+
+**Forecast Response**
+```json
+{
+  "model_type": "arima",
+  "model_path": "models/demand_arima_v1_20260617T083000.pkl",
+  "metrics": {
+    "aic": 245.3,
+    "bic": 251.1,
+    "rmse": 12.4,
+    "mse": 153.8,
+    "mae": 9.8
+  },
+  "forecast": [142.1, 145.3, 138.9, 151.0, 148.2, 143.7, 155.1],
+  "peaks": [
+    { "period": "2024-03-15", "value": 312.5 },
+    { "period": "2024-07-04", "value": 298.1 },
+    { "period": "2024-12-24", "value": 341.2 }
+  ]
+}
+```
+
+---
+
+### Forecasting Flows
+
+**Single Model Training:**
+```
+POST /api/forecast/train-model
+            ↓
+    Load CSV  OR  use provided actuals array
+            ↓
+    Train chosen model
+    ┌─────────────────────────────────┐
+    │ ARIMA   → statsmodels SARIMAX   │
+    │ XGBoost → 7-lag feature matrix  │
+    │ LSTM    → Keras Sequential      │
+    │ Prophet → fb Prophet + Stan     │
+    └─────────────────────────────────┘
+            ↓
+    Evaluate on test set
+    → compute AIC, BIC, RMSE, MSE, MAE
+            ↓
+    Generate N-step forecast
+            ↓
+    Detect top-3 demand peaks
+            ↓
+    Register to registry.json (ARIMA only)
+            ↓
+    Return: metrics + forecast + peaks
+```
+
+**Compare All Models:**
+```
+POST /api/forecast/compare-models
+            ↓
+    Same dataset → train ARIMA + XGBoost + LSTM + Prophet (parallel)
+            ↓
+    Compare: AIC, BIC, RMSE, MSE, MAE per model
+            ↓
+    Show forecast sample per model
+            ↓
+    Return: all results + best model recommendation
+```
+
+---
+
+## Module 5 — Recommendations
+
+> Generate actionable inventory and procurement recommendations based on forecast output.
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `services/recommendation/recommendation_service.py` | Recommendation logic |
+| `routes/recommendation.py` | `/api/v1/recommendations/` endpoints |
+
+### Recommendation Types
+
+| Type | Trigger |
+|------|---------|
+| `reorder` | Stock below reorder point |
+| `procurement` | Forecast demand exceeds available stock |
+| `transfer` | Excess stock in one warehouse, shortage in another |
+| `critical` | Immediate stockout risk |
+
+### API Endpoints
+
+```
+GET    /api/v1/recommendations                   → All recommendations
+GET    /api/v1/recommendations/critical          → Critical priority only
+GET    /api/v1/recommendations/high              → High priority only
+GET    /api/v1/recommendations/reorder           → Reorder type only
+GET    /api/v1/recommendations/procurement       → Procurement type only
+
+POST   /api/v1/recommendations/{id}/execute      → Mark as executed
+POST   /api/v1/recommendations/{id}/ignore       → Mark as ignored
+POST   /api/v1/recommendations/execute-all       → Bulk execute pending
+POST   /api/v1/recommendations/ignore-all        → Bulk ignore pending
+```
+
+---
+
+## Core Infrastructure
+
+### `db/session.py` — Database Connection
+
+```python
+# Engine setup (SQLite dev, swap for MySQL in prod)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Used in every route via dependency injection
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+### `core/security.py` — Token & Password
+
+```
+hash_password(plain)         → SHA-256 hex digest
+verify_password(plain, hash) → bool
+create_access_token(data)    → JWT (60 min default)
+verify_token(token)          → decoded payload dict  |  None if invalid
+```
+
+### `core/dependencies.py` — Route Protection
+
+```python
+# Applied to every protected endpoint:
+current_user = Depends(get_current_user)
+
+# Checks performed (in order):
+# 1. Authorization: Bearer header present
+# 2. JWT not expired
+# 3. JWT signature valid (matches JWT_SECRET_KEY)
+# 4. User ID from payload exists in DB
+# 5. user.is_active == True
+```
+
+### `core/permissions.py` — Role-Based Access
+
+```python
+# Restrict endpoint to super_admin only:
+current_user = Depends(require_role("super_admin"))
+
+# Roles available:
+# - "user"        → standard access
+# - "super_admin" → full system access
+```
+
+---
+
+## Database & Migrations
+
+### Tables
+
+| Table | Model File | Purpose |
+|-------|-----------|---------|
+| `users` | `auth_model.py` | User accounts |
+| `otps` | `otp_model.py` | OTP codes for password reset |
+| `data_sources` | `data_source_model.py` | External data connections |
+| `uploads` | `upload_model.py` | Uploaded CSV files |
+| `validation_errors` | `validation_error_model.py` | Data quality issues |
+
+### Alembic Migrations
+
+```bash
+# Check current migration state
+alembic current
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Create a new migration after model changes
+alembic revision --autogenerate -m "your_description"
+
+# Rollback one step
+alembic downgrade -1
+```
+
+### Migration History
+
+| File | Description |
+|------|-------------|
+| `c7616dbbb55b_initial_commit.py` | Initial tables (users, uploads, data_sources) |
+| `d9a7b41e2c31_add_workflow_tables.py` | Validation errors + OTP tables |
+
+---
+
+## Configuration Reference
+
+All values loaded from `.env` via `core/config.py`:
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DATABASE_URL` | `sqlite:///./test.db` | Switch to MySQL for production |
+| `JWT_SECRET_KEY` | `change_this_secret_in_production` | **Must change before deploying** |
+| `JWT_ALGORITHM` | `HS256` | Standard — don't change |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | 1 hour |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | 7 days |
+| `OTP_EXPIRE_MINUTES` | `10` | 10 minutes |
+| `DEFAULT_DATASET_PATH` | `data/demand forecasting dataset.csv` | Used when no path provided |
+| `UPLOAD_DIR` | `uploads/` | Where uploaded files are stored |
+| `MAX_UPLOAD_SIZE_MB` | `50` | Reject files above this size |
+
+**Example `.env`**
+```env
+DATABASE_URL=sqlite:///./test.db
+JWT_SECRET_KEY=your-super-secret-key-here
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+DEFAULT_DATASET_PATH=fastapi_app/data/demand forecasting dataset.csv
+```
+
+---
+
+## Quick Start
+
+```bash
+# 1. Enter project directory
+cd "Ai Demand Forecasting Project"
+
+# 2. Create virtual environment
+#    Python 3.11 recommended (Prophet compatibility)
+py -3.11 -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # Mac / Linux
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Create .env file (copy values from Configuration Reference above)
+
+# 5. Run database migrations
+alembic upgrade head
+
+# 6. Create super admin
+python fastapi_app/scripts/create_superadmin.py
+
+# 7. Start the server
+uvicorn fastapi_app.main:app --reload --port 8000
+
+# 8. Open docs
+#    http://localhost:8000/docs
+```
+
+### First Steps in Swagger UI
+
+```
+Step 1 → POST /api/v1/auth/login              Login → copy access_token
+Step 2 → Click "Authorize" button             Paste: Bearer <access_token>
+Step 3 → POST /api/v1/uploads/file            Upload your CSV
+Step 4 → POST /api/v1/uploads/{id}/process    Validate & process it
+Step 5 → POST /api/data_process/from-csv      Run full cleaning pipeline
+Step 6 → POST /api/forecast/train-model       Train ARIMA or XGBoost
+Step 7 → POST /api/forecast/compare-models    Compare all 4 models
+Step 8 → GET  /api/v1/forecast-engine/report  Full forecast report
+```
+
+---
